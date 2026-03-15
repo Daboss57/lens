@@ -2,6 +2,8 @@
 
 Python tracing SDK for LENS local LLM observability.
 
+Repository: `https://github.com/Daboss57/lens`
+
 ## Install
 
 Core client only:
@@ -42,6 +44,10 @@ client.record(
     status="success",
 )
 ```
+
+## Release Status
+
+The SDK package metadata is set up for PyPI publishing and GitHub Actions release automation.
 
 ## Environment
 

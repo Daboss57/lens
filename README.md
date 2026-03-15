@@ -76,6 +76,10 @@ pip install "./sdk[providers]"
 
 See `sdk/README.md` for package usage details.
 
+## Publishing
+
+Python SDK release automation is documented in `docs/publishing.md`.
+
 ## API Surface
 
 - `POST /api/v1/traces`
