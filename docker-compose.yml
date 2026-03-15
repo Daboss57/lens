@@ -1,0 +1,26 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: lens-api
+    environment:
+      LENS_API_HOST: 0.0.0.0
+      LENS_API_PORT: 8100
+      LENS_DB_PATH: /app/data/lens.db
+      LENS_CORS_ORIGINS: http://localhost:4200,http://127.0.0.1:4200
+    ports:
+      - "8100:8100"
+    volumes:
+      - ./data:/app/data
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+      args:
+        VITE_LENS_API_URL: http://localhost:8100
+    container_name: lens-dashboard
+    depends_on:
+      - api
+    ports:
+      - "4200:4200"

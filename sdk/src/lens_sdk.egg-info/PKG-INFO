@@ -1,0 +1,20 @@
+Metadata-Version: 2.4
+Name: lens-sdk
+Version: 0.1.0
+Summary: Python SDK core for LENS
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: httpx<1.0.0,>=0.27.0
+Provides-Extra: dev
+Requires-Dist: pytest<9.0.0,>=8.2.0; extra == "dev"
+
+# SDK
+
+Week 2 starts with the Python SDK core:
+
+- environment-driven config
+- shared trace event types
+- sync + async HTTP transport
+- silent-fail client behavior when the LENS API is unavailable
+
+Provider wrappers land next.

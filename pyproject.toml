@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+pythonpath = ["server/src", "sdk/src"]
+testpaths = ["server/tests", "sdk/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["server/src", "sdk/src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
