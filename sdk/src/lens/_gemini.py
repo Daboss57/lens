@@ -10,8 +10,10 @@ from lens._wrapper_utils import (
     extract_session_id,
     extract_usage,
     extract_user_id,
+    merge_lens_metadata,
     request_payload as build_request_payload,
     response_to_dict,
+    split_lens_kwargs,
 )
 from lens.client import AsyncLensClient, LensClient
 from lens.types import TraceEvent
@@ -48,6 +50,7 @@ def _build_success_event(
     *,
     provider_model: Any,
     request_kwargs: dict[str, Any],
+    lens_context: dict[str, Any],
     request_payload: dict[str, Any],
     response: Any,
     latency_ms: int,
@@ -55,7 +58,7 @@ def _build_success_event(
 ) -> TraceEvent:
     response_payload = response_to_dict(response)
     prompt_tokens, completion_tokens, total_tokens = extract_usage(response)
-    metadata = _extract_metadata(request_kwargs)
+    metadata = merge_lens_metadata(_extract_metadata(request_kwargs), lens_context)
     return TraceEvent(
         provider="gemini",
         model=_extract_model_name(request_kwargs, response_payload, fallback_model=provider_model),
@@ -77,12 +80,13 @@ def _build_error_event(
     *,
     provider_model: Any,
     request_kwargs: dict[str, Any],
+    lens_context: dict[str, Any],
     request_payload: dict[str, Any],
     latency_ms: int,
     exc: Exception,
     endpoint: str,
 ) -> TraceEvent:
-    metadata = _extract_metadata(request_kwargs)
+    metadata = merge_lens_metadata(_extract_metadata(request_kwargs), lens_context)
     return TraceEvent(
         provider="gemini",
         model=_extract_model_name(request_kwargs, None, fallback_model=provider_model),
@@ -120,16 +124,17 @@ def _patch_bound_method(
         @wraps(method)
         async def wrapped(*args: Any, **kwargs: Any) -> Any:
             started_at = perf_counter()
-            request_kwargs = dict(kwargs)
+            request_kwargs, lens_context = split_lens_kwargs(dict(kwargs))
             request_payload = build_request_payload(args, request_kwargs)
             try:
-                response = await method(*args, **kwargs)
+                response = await method(*args, **request_kwargs)
             except Exception as exc:
                 latency_ms = int((perf_counter() - started_at) * 1000)
                 await recorder.capture(
                     _build_error_event(
                         provider_model=provider_model,
                         request_kwargs=request_kwargs,
+                        lens_context=lens_context,
                         request_payload=request_payload,
                         latency_ms=latency_ms,
                         exc=exc,
@@ -143,6 +148,7 @@ def _patch_bound_method(
                 _build_success_event(
                     provider_model=provider_model,
                     request_kwargs=request_kwargs,
+                    lens_context=lens_context,
                     request_payload=request_payload,
                     response=response,
                     latency_ms=latency_ms,
@@ -156,16 +162,17 @@ def _patch_bound_method(
         @wraps(method)
         def wrapped(*args: Any, **kwargs: Any) -> Any:
             started_at = perf_counter()
-            request_kwargs = dict(kwargs)
+            request_kwargs, lens_context = split_lens_kwargs(dict(kwargs))
             request_payload = build_request_payload(args, request_kwargs)
             try:
-                response = method(*args, **kwargs)
+                response = method(*args, **request_kwargs)
             except Exception as exc:
                 latency_ms = int((perf_counter() - started_at) * 1000)
                 recorder.capture(
                     _build_error_event(
                         provider_model=provider_model,
                         request_kwargs=request_kwargs,
+                        lens_context=lens_context,
                         request_payload=request_payload,
                         latency_ms=latency_ms,
                         exc=exc,
@@ -179,6 +186,7 @@ def _patch_bound_method(
                 _build_success_event(
                     provider_model=provider_model,
                     request_kwargs=request_kwargs,
+                    lens_context=lens_context,
                     request_payload=request_payload,
                     response=response,
                     latency_ms=latency_ms,
@@ -279,6 +287,8 @@ def patch_gemini(
         for module_name in ("google.genai", "google.generativeai"):
             try:
                 targets.append(import_module(module_name))
+                if module_name == "google.genai":
+                    break
             except Exception:
                 continue
 

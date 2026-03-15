@@ -114,6 +114,31 @@ def test_sync_openai_wrapper_captures_successful_chat_completion() -> None:
     assert event.completion_tokens == 4
 
 
+def test_sync_openai_wrapper_accepts_lens_specific_kwargs() -> None:
+    sync_recorder = SyncRecorder()
+    async_recorder = AsyncRecorder()
+    patch_openai(
+        make_fake_openai_module(),
+        lens_client=sync_recorder,
+        async_lens_client=async_recorder,
+    )
+
+    client = FakeOpenAI()
+    response = client.chat.completions.create(
+        model="gpt-5.4",
+        messages=[{"role": "user", "content": "hello"}],
+        lens_session_id="lens-session-1",
+        lens_user_id="lens-user-1",
+        lens_metadata={"source": "test"},
+    )
+
+    assert response.model == "gpt-5.4"
+    event = sync_recorder.events[0]
+    assert event.session_id == "lens-session-1"
+    assert event.user_id == "lens-user-1"
+    assert event.metadata["source"] == "test"
+
+
 def test_sync_openai_wrapper_re_raises_and_captures_failure() -> None:
     sync_recorder = SyncRecorder()
     async_recorder = AsyncRecorder()

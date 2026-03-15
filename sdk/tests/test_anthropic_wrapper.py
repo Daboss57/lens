@@ -107,6 +107,29 @@ def test_sync_anthropic_wrapper_captures_success() -> None:
     assert event.user_id == "user-2"
 
 
+def test_sync_anthropic_wrapper_accepts_lens_specific_kwargs() -> None:
+    sync_recorder = SyncRecorder()
+    async_recorder = AsyncRecorder()
+    module = make_fake_module()
+    patch_anthropic(module, lens_client=sync_recorder, async_lens_client=async_recorder)
+
+    client = module.Anthropic()
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=100,
+        messages=[{"role": "user", "content": "hello"}],
+        lens_session_id="anthropic-lens-session",
+        lens_user_id="anthropic-user",
+        lens_metadata={"source": "test"},
+    )
+
+    assert response.model == "claude-sonnet-4-6"
+    event = sync_recorder.events[0]
+    assert event.session_id == "anthropic-lens-session"
+    assert event.user_id == "anthropic-user"
+    assert event.metadata["source"] == "test"
+
+
 def test_sync_anthropic_wrapper_captures_failure_and_reraises() -> None:
     sync_recorder = SyncRecorder()
     async_recorder = AsyncRecorder()

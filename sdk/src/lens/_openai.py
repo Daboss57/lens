@@ -10,8 +10,10 @@ from lens._wrapper_utils import (
     extract_session_id,
     extract_usage,
     extract_user_id,
+    merge_lens_metadata,
     request_payload as build_request_payload,
     response_to_dict,
+    split_lens_kwargs,
 )
 from lens.client import AsyncLensClient, LensClient
 from lens.types import TraceEvent
@@ -31,14 +33,18 @@ def _extract_model_name(
 def _build_success_event(
     *,
     request_kwargs: dict[str, Any],
+    lens_context: dict[str, Any],
     request_payload: dict[str, Any],
     response: Any,
     latency_ms: int,
 ) -> TraceEvent:
     response_payload = response_to_dict(response)
     prompt_tokens, completion_tokens, total_tokens = extract_usage(response)
-    metadata = (
-        request_kwargs.get("metadata") if isinstance(request_kwargs.get("metadata"), dict) else None
+    metadata = merge_lens_metadata(
+        request_kwargs.get("metadata")
+        if isinstance(request_kwargs.get("metadata"), dict)
+        else None,
+        lens_context,
     )
     return TraceEvent(
         provider="openai",
@@ -60,12 +66,16 @@ def _build_success_event(
 def _build_error_event(
     *,
     request_kwargs: dict[str, Any],
+    lens_context: dict[str, Any],
     request_payload: dict[str, Any],
     latency_ms: int,
     exc: Exception,
 ) -> TraceEvent:
-    metadata = (
-        request_kwargs.get("metadata") if isinstance(request_kwargs.get("metadata"), dict) else None
+    metadata = merge_lens_metadata(
+        request_kwargs.get("metadata")
+        if isinstance(request_kwargs.get("metadata"), dict)
+        else None,
+        lens_context,
     )
     return TraceEvent(
         provider="openai",
@@ -98,15 +108,16 @@ def _patch_completions_resource(resource: Any, recorder: Any, *, asynchronous: b
         @wraps(create)
         async def wrapped_create(*args: Any, **kwargs: Any) -> Any:
             started_at = perf_counter()
-            request_kwargs = dict(kwargs)
+            request_kwargs, lens_context = split_lens_kwargs(dict(kwargs))
             request_payload = build_request_payload(args, request_kwargs)
             try:
-                response = await create(*args, **kwargs)
+                response = await create(*args, **request_kwargs)
             except Exception as exc:
                 latency_ms = int((perf_counter() - started_at) * 1000)
                 await recorder.capture(
                     _build_error_event(
                         request_kwargs=request_kwargs,
+                        lens_context=lens_context,
                         request_payload=request_payload,
                         latency_ms=latency_ms,
                         exc=exc,
@@ -118,6 +129,7 @@ def _patch_completions_resource(resource: Any, recorder: Any, *, asynchronous: b
             await recorder.capture(
                 _build_success_event(
                     request_kwargs=request_kwargs,
+                    lens_context=lens_context,
                     request_payload=request_payload,
                     response=response,
                     latency_ms=latency_ms,
@@ -130,15 +142,16 @@ def _patch_completions_resource(resource: Any, recorder: Any, *, asynchronous: b
         @wraps(create)
         def wrapped_create(*args: Any, **kwargs: Any) -> Any:
             started_at = perf_counter()
-            request_kwargs = dict(kwargs)
+            request_kwargs, lens_context = split_lens_kwargs(dict(kwargs))
             request_payload = build_request_payload(args, request_kwargs)
             try:
-                response = create(*args, **kwargs)
+                response = create(*args, **request_kwargs)
             except Exception as exc:
                 latency_ms = int((perf_counter() - started_at) * 1000)
                 recorder.capture(
                     _build_error_event(
                         request_kwargs=request_kwargs,
+                        lens_context=lens_context,
                         request_payload=request_payload,
                         latency_ms=latency_ms,
                         exc=exc,
@@ -150,6 +163,7 @@ def _patch_completions_resource(resource: Any, recorder: Any, *, asynchronous: b
             recorder.capture(
                 _build_success_event(
                     request_kwargs=request_kwargs,
+                    lens_context=lens_context,
                     request_payload=request_payload,
                     response=response,
                     latency_ms=latency_ms,

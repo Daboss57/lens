@@ -126,6 +126,28 @@ def test_google_genai_client_wrapper_captures_success() -> None:
     assert event.session_id == "gemini-session"
 
 
+def test_google_genai_client_wrapper_accepts_lens_specific_kwargs() -> None:
+    sync_recorder = SyncRecorder()
+    async_recorder = AsyncRecorder()
+    module = SimpleNamespace(Client=FakeGoogleGenAIClient)
+    patch_gemini(module, lens_client=sync_recorder, async_lens_client=async_recorder)
+
+    client = module.Client()
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents="hello",
+        lens_session_id="gemini-lens-session",
+        lens_user_id="gemini-user",
+        lens_metadata={"source": "test"},
+    )
+
+    assert response.model == "gemini-2.5-pro"
+    event = sync_recorder.events[0]
+    assert event.session_id == "gemini-lens-session"
+    assert event.user_id == "gemini-user"
+    assert event.metadata["source"] == "test"
+
+
 @pytest.mark.anyio
 async def test_google_genai_async_wrapper_captures_success() -> None:
     sync_recorder = SyncRecorder()

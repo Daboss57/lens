@@ -5,6 +5,10 @@ from typing import Any, Iterable
 
 from lens.types import make_json_safe
 
+LENS_SESSION_ID_KWARG = "lens_session_id"
+LENS_USER_ID_KWARG = "lens_user_id"
+LENS_METADATA_KWARG = "lens_metadata"
+
 
 def response_to_dict(response: Any) -> dict[str, Any] | None:
     if response is None:
@@ -34,6 +38,33 @@ def request_payload(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, 
     if args:
         payload["_args"] = make_json_safe(list(args))
     return payload
+
+
+def split_lens_kwargs(kwargs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    provider_kwargs = dict(kwargs)
+    lens_context = {
+        "session_id": provider_kwargs.pop(LENS_SESSION_ID_KWARG, None),
+        "user_id": provider_kwargs.pop(LENS_USER_ID_KWARG, None),
+        "metadata": provider_kwargs.pop(LENS_METADATA_KWARG, None),
+    }
+    if not isinstance(lens_context["metadata"], dict):
+        lens_context["metadata"] = None
+    return provider_kwargs, lens_context
+
+
+def merge_lens_metadata(
+    provider_metadata: dict[str, Any] | None,
+    lens_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    merged: dict[str, Any] = dict(provider_metadata or {})
+    extra_metadata = lens_context.get("metadata")
+    if isinstance(extra_metadata, dict):
+        merged.update(extra_metadata)
+    if lens_context.get("session_id") is not None:
+        merged.setdefault("session_id", str(lens_context["session_id"]))
+    if lens_context.get("user_id") is not None:
+        merged.setdefault("user_id", str(lens_context["user_id"]))
+    return merged or None
 
 
 def error_status(exc: Exception) -> str:

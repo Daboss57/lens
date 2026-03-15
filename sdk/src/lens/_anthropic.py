@@ -10,8 +10,10 @@ from lens._wrapper_utils import (
     extract_session_id,
     extract_usage,
     extract_user_id,
+    merge_lens_metadata,
     request_payload as build_request_payload,
     response_to_dict,
+    split_lens_kwargs,
 )
 from lens.client import AsyncLensClient, LensClient
 from lens.types import TraceEvent
@@ -36,6 +38,7 @@ def _extract_metadata(request_kwargs: dict[str, Any]) -> dict[str, Any] | None:
 def _build_success_event(
     *,
     request_kwargs: dict[str, Any],
+    lens_context: dict[str, Any],
     request_payload: dict[str, Any],
     response: Any,
     latency_ms: int,
@@ -47,7 +50,7 @@ def _build_success_event(
         completion_keys=("output_tokens", "completion_tokens"),
         total_keys=("total_tokens",),
     )
-    metadata = _extract_metadata(request_kwargs)
+    metadata = merge_lens_metadata(_extract_metadata(request_kwargs), lens_context)
     return TraceEvent(
         provider="anthropic",
         model=_extract_model_name(request_kwargs, response_payload),
@@ -68,11 +71,12 @@ def _build_success_event(
 def _build_error_event(
     *,
     request_kwargs: dict[str, Any],
+    lens_context: dict[str, Any],
     request_payload: dict[str, Any],
     latency_ms: int,
     exc: Exception,
 ) -> TraceEvent:
-    metadata = _extract_metadata(request_kwargs)
+    metadata = merge_lens_metadata(_extract_metadata(request_kwargs), lens_context)
     return TraceEvent(
         provider="anthropic",
         model=str(request_kwargs.get("model") or "unknown"),
@@ -101,15 +105,16 @@ def _patch_messages_resource(resource: Any, recorder: Any, *, asynchronous: bool
         @wraps(create)
         async def wrapped_create(*args: Any, **kwargs: Any) -> Any:
             started_at = perf_counter()
-            request_kwargs = dict(kwargs)
+            request_kwargs, lens_context = split_lens_kwargs(dict(kwargs))
             request_payload = build_request_payload(args, request_kwargs)
             try:
-                response = await create(*args, **kwargs)
+                response = await create(*args, **request_kwargs)
             except Exception as exc:
                 latency_ms = int((perf_counter() - started_at) * 1000)
                 await recorder.capture(
                     _build_error_event(
                         request_kwargs=request_kwargs,
+                        lens_context=lens_context,
                         request_payload=request_payload,
                         latency_ms=latency_ms,
                         exc=exc,
@@ -121,6 +126,7 @@ def _patch_messages_resource(resource: Any, recorder: Any, *, asynchronous: bool
             await recorder.capture(
                 _build_success_event(
                     request_kwargs=request_kwargs,
+                    lens_context=lens_context,
                     request_payload=request_payload,
                     response=response,
                     latency_ms=latency_ms,
@@ -133,15 +139,16 @@ def _patch_messages_resource(resource: Any, recorder: Any, *, asynchronous: bool
         @wraps(create)
         def wrapped_create(*args: Any, **kwargs: Any) -> Any:
             started_at = perf_counter()
-            request_kwargs = dict(kwargs)
+            request_kwargs, lens_context = split_lens_kwargs(dict(kwargs))
             request_payload = build_request_payload(args, request_kwargs)
             try:
-                response = create(*args, **kwargs)
+                response = create(*args, **request_kwargs)
             except Exception as exc:
                 latency_ms = int((perf_counter() - started_at) * 1000)
                 recorder.capture(
                     _build_error_event(
                         request_kwargs=request_kwargs,
+                        lens_context=lens_context,
                         request_payload=request_payload,
                         latency_ms=latency_ms,
                         exc=exc,
@@ -153,6 +160,7 @@ def _patch_messages_resource(resource: Any, recorder: Any, *, asynchronous: bool
             recorder.capture(
                 _build_success_event(
                     request_kwargs=request_kwargs,
+                    lens_context=lens_context,
                     request_payload=request_payload,
                     response=response,
                     latency_ms=latency_ms,
